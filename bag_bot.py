@@ -9,8 +9,7 @@ from aiogram.filters import Command
 # ==============================
 # НАСТРОЙКИ
 # ==============================
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-print("BOT_TOKEN =", repr(BOT_TOKEN))
+BOT_TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
 DATA_FILE = "bag_data.json"
 
 # Варианты ответа в опросе, которые считаются "Буду"
@@ -102,7 +101,7 @@ async def handle_poll_message(message: types.Message):
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Привет! 👋🏻 Я выбираю кто забирает стирать манишки 😶‍🌫\n\n"
+        "👋 Привет! Я выбираю кто несёт сумку на тренировку.\n\n"
         "📋 *Как пользоваться:*\n"
         "1. Тренер создаёт опрос с вариантом *«Буду»*\n"
         "2. Участники голосуют\n"
@@ -149,7 +148,7 @@ async def cmd_pick(message: types.Message):
 
     if not eligible:
         await message.answer(
-            "🔄 Все кто пришёл — уже стирали!\n"
+            "🔄 Все кто пришёл — уже брали сумку!\n"
             "Сбрасываю историю и выбираю из всех."
         )
         data["history"] = []
@@ -165,12 +164,13 @@ async def cmd_pick(message: types.Message):
     save_data(data)
 
     skipped = len(voters) - len(eligible)
-    skip_note = f"\n_(пропущено {skipped} чел. — уже стирали!)_" if skipped > 0 else ""
+    skip_note = f"\n_(пропущено {skipped} чел. — уже брали сумку)_" if skipped > 0 else ""
 
     await message.answer(
-    f"Сегодня манишки забирает: {chosen_name} 😶‍🌫️\n\n"
-    f"Выбран из {len(eligible)} тренировавшихся тигров 🐯"
-)
+        f"👉 *Сегодня сумку берёт: {chosen_name}*\n"
+        f"_(выбран случайно из {len(eligible)} участников)_{skip_note}",
+        parse_mode="Markdown"
+    )
 
 
 @dp.message(Command("history"))
@@ -190,7 +190,7 @@ async def cmd_history(message: types.Message):
         lines.append(f"• {name} — {cnt} раз(а)")
 
     await message.answer(
-        "📋 *История дежурств стирки:*\n\n" + "\n".join(lines),
+        "📋 *История дежурств с сумкой:*\n\n" + "\n".join(lines),
         parse_mode="Markdown"
     )
 
@@ -208,7 +208,7 @@ async def cmd_reset(message: types.Message):
     data = load_data()
     data["history"] = []
     save_data(data)
-    await message.answer("✅ История дежурств стирки сброшена!")
+    await message.answer("✅ История дежурств сброшена!")
 
 
 async def main():
