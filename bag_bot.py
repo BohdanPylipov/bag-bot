@@ -25,11 +25,37 @@ def load_data() -> dict:
         "history": [],
         "known_users": {},
         "poll_voters": {},
+        "poll_out": {},
     }
 
 def save_data(data: dict):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+def get_full_name(user: types.User) -> str:
+    if user.last_name:
+        return f"{user.first_name} {user.last_name}"
+    return user.first_name
+
+def build_message_text(data: dict) -> str:
+    voters_in = data.get("poll_voters", {})
+    voters_out = data.get("poll_out", {})
+
+    text = "*Сегодня тренировка! ⚽️*\n\nГолосуем нажатием ⤵️\n\n"
+
+    if voters_in:
+        names_in = "\n".join(f"• {name}" for name in voters_in.values())
+        text += f"🙋🏻‍♂️ *Придут ({len(voters_in)}):*\n{names_in}\n\n"
+    else:
+        text += "🙋🏻‍♂️ *Придут (0):*\n_(Пока пусто 👎🏻)_\n\n"
+
+    if voters_out:
+        names_out = "\n".join(f"• {name}" for name in voters_out.values())
+        text += f"🙅🏻‍♂️ *Не придут ({len(voters_out)}):*\n{names_out}"
+    else:
+        text += "🙅🏻‍♂️ *Не придут (0):*\n_(Пока пусто 👍🏻)_"
+
+    return text
 
 # ==============================
 # БОТ
@@ -41,8 +67,8 @@ dp = Dispatcher()
 def get_vote_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✋ Буду!", callback_data="im_in"),
-            InlineKeyboardButton(text="❌ Не буду", callback_data="im_out")
+            InlineKeyboardButton(text="Буду! 👍🏻", callback_data="im_in"),
+            InlineKeyboardButton(text="Не буду! 👎🏻", callback_data="im_out")
         ]
     ])
 
@@ -53,16 +79,16 @@ def get_vote_keyboard():
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "👋 Привет! Я выбираю кто несёт сумку на тренировку.\n\n"
+        "Привет 👋🏻 Я выбираю дежурного по стирке манишек 🧺\n\n"
         "📋 *Как пользоваться:*\n"
         "1. Тренер пишет /training\n"
-        "2. Участники нажимают «✋ Буду!» или «❌ Не буду»\n"
-        "3. Тренер пишет /pick — я выбираю случайного\n\n"
+        "2. Участники нажимают «Буду! 👍🏻» или «Не буду! 👎🏻»\n"
+        "3. Тренер пишет /pick — я выбираю дежурного с учётом истории предыдущих результатов 👌🏻\n\n"
         "⚙️ *Команды:*\n"
         "/training — начать сбор голосов\n"
-        "/pick — выбрать кто несёт сумку\n"
+        "/pick — выбрать дежурного\n"
         "/voters — кто сейчас нажал «Буду»\n"
-        "/history — история дежурств\n"
+        "/history — история дежурств ✍🏻\n"
         "/reset — сбросить историю (только админы)",
         parse_mode="Markdown"
     )
@@ -71,10 +97,11 @@ async def cmd_start(message: types.Message):
 async def cmd_training(message: types.Message):
     data = load_data()
     data["poll_voters"] = {}
+    data["poll_out"] = {}
     save_data(data)
 
     await message.answer(
-        "🏋️ *Скоро тренировка!*\n\nКто будет — нажмите кнопку 👇",
+        build_message_text(data),
         parse_mode="Markdown",
         reply_markup=get_vote_keyboard()
     )
@@ -84,20 +111,19 @@ async def handle_in(callback: types.CallbackQuery):
     data = load_data()
     user = callback.from_user
     user_id = str(user.id)
-    username = f"@{user.username}" if user.username else user.full_name
+    full_name = get_full_name(user)
 
-    data["known_users"][user_id] = username
-    data["poll_voters"][user_id] = username
+    data["known_users"][user_id] = full_name
+    data["poll_voters"][user_id] = full_name
+    if "poll_out" not in data:
+        data["poll_out"] = {}
+    data["poll_out"].pop(user_id, None)
     save_data(data)
 
-    count = len(data["poll_voters"])
-    names = "\n".join(f"• {v}" for v in data["poll_voters"].values())
-
-    await callback.answer("Записал! ✅")
+    await callback.answer("До встречи! ✍🏻")
     try:
         await callback.message.edit_text(
-            f"🏋️ *Скоро тренировка!*\n\nКто будет — нажмите кнопку 👇\n\n"
-            f"*Придут ({count}):*\n{names}",
+            build_message_text(data),
             parse_mode="Markdown",
             reply_markup=get_vote_keyboard()
         )
@@ -109,18 +135,19 @@ async def handle_out(callback: types.CallbackQuery):
     data = load_data()
     user = callback.from_user
     user_id = str(user.id)
+    full_name = get_full_name(user)
 
-    data["poll_voters"].pop(user_id, None)
+    data["known_users"][user_id] = full_name
+    if "poll_out" not in data:
+        data["poll_out"] = {}
+    data["poll_out"][user_id] = full_name
+    data.get("poll_voters", {}).pop(user_id, None)
     save_data(data)
 
-    count = len(data["poll_voters"])
-    names = "\n".join(f"• {v}" for v in data["poll_voters"].values()) if data["poll_voters"] else "_(пока никто)_"
-
-    await callback.answer("Убрал тебя из списка.")
+    await callback.answer("Не пропадай ☹️")
     try:
         await callback.message.edit_text(
-            f"🏋️ *Скоро тренировка!*\n\nКто будет — нажмите кнопку 👇\n\n"
-            f"*Придут ({count}):*\n{names}",
+            build_message_text(data),
             parse_mode="Markdown",
             reply_markup=get_vote_keyboard()
         )
@@ -138,7 +165,7 @@ async def cmd_voters(message: types.Message):
 
     names = "\n".join(f"• {name}" for name in voters.values())
     await message.answer(
-        f"✋ *Придут ({len(voters)} чел.):*\n\n{names}",
+        f"🙋🏻‍♂️ *Придут ({len(voters)} чел.):*\n\n{names}",
         parse_mode="Markdown"
     )
 
@@ -159,8 +186,8 @@ async def cmd_pick(message: types.Message):
 
     if not eligible:
         await message.answer(
-            "🔄 Все кто придёт — уже брали сумку!\n"
-            "Сбрасываю историю и выбираю из всех."
+            "Все кто придёт — уже дежурили! 😳\n"
+            "Сбрасываю историю и выбираю из всех 🔄"
         )
         data["history"] = []
         save_data(data)
@@ -175,12 +202,11 @@ async def cmd_pick(message: types.Message):
     save_data(data)
 
     skipped = len(voters) - len(eligible)
-    skip_note = f"\n_(пропущено {skipped} чел. — уже брали сумку)_" if skipped > 0 else ""
+    skip_note = f"\n_({skipped} из списка — уже дежурили 🤞🏻)_" if skipped > 0 else ""
 
     await message.answer(
-        f"👉 *Сегодня сумку берёт: {chosen_name}*\n"
-        f"_(выбран случайно из {len(eligible)} участников)_{skip_note}",
-        parse_mode="Markdown"
+        f"Сегодня сумку берёт: {chosen_name} 😶‍🌫️\n\n"
+        f"Выбран из {len(eligible)} 👌🏻{skip_note}"
     )
 
 @dp.message(Command("history"))
@@ -190,7 +216,7 @@ async def cmd_history(message: types.Message):
     known_users = data.get("known_users", {})
 
     if not history:
-        await message.answer("📋 История пока пуста.")
+        await message.answer("История пока пуста 📋")
         return
 
     counts = Counter(history)
@@ -200,7 +226,7 @@ async def cmd_history(message: types.Message):
         lines.append(f"• {name} — {cnt} раз(а)")
 
     await message.answer(
-        "📋 *История дежурств с сумкой:*\n\n" + "\n".join(lines),
+        "*История дежурств с сумкой ✍🏻 :*\n\n" + "\n".join(lines),
         parse_mode="Markdown"
     )
 
@@ -209,7 +235,7 @@ async def cmd_reset(message: types.Message):
     try:
         member = await bot.get_chat_member(message.chat.id, message.from_user.id)
         if member.status not in ("administrator", "creator"):
-            await message.answer("❌ Только администраторы могут сбрасывать историю.")
+            await message.answer("Только администраторы могут сбрасывать историю ❌")
             return
     except Exception:
         pass
@@ -217,7 +243,7 @@ async def cmd_reset(message: types.Message):
     data = load_data()
     data["history"] = []
     save_data(data)
-    await message.answer("✅ История дежурств сброшена!")
+    await message.answer("История дежурств сброшена! ✅")
 
 async def main():
     print("Бот запущен!")
