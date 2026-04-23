@@ -9,7 +9,8 @@ from aiogram.filters import Command
 # ==============================
 # НАСТРОЙКИ
 # ==============================
-BOT_TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+print("BOT_TOKEN =", repr(BOT_TOKEN))
 DATA_FILE = "bag_data.json"
 
 # Варианты ответа в опросе, которые считаются "Буду"
