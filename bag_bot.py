@@ -57,6 +57,17 @@ def build_message_text(data: dict) -> str:
 
     return text
 
+def get_vote_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Буду! 👍🏻", callback_data="im_in"),
+            InlineKeyboardButton(text="Не буду! 👎🏻", callback_data="im_out")
+        ],
+        [
+            InlineKeyboardButton(text="Выбрать дежурного 🎲", callback_data="do_pick")
+        ]
+    ])
+
 # ==============================
 # БОТ
 # ==============================
@@ -64,13 +75,32 @@ def build_message_text(data: dict) -> str:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-def get_vote_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="Буду! 👍🏻", callback_data="im_in"),
-            InlineKeyboardButton(text="Не буду! 👎🏻", callback_data="im_out")
-        ]
-    ])
+async def do_pick_logic(voters: dict, data: dict) -> str:
+    history = data["history"]
+    eligible = {uid: name for uid, name in voters.items() if uid not in history}
+
+    reset_note = ""
+    if not eligible:
+        reset_note = "Все кто придёт — уже дежурили! 😳\nСбрасываю историю и выбираю из всех 🔄\n\n"
+        data["history"] = []
+        save_data(data)
+        eligible = voters
+
+    chosen_id, chosen_name = random.choice(list(eligible.items()))
+
+    data["history"].append(chosen_id)
+    if len(data["history"]) > 100:
+        data["history"] = data["history"][-100:]
+    save_data(data)
+
+    skipped = len(voters) - len(eligible)
+    skip_note = f"\n_({skipped} из списка — уже дежурили 🤞🏻)_" if skipped > 0 else ""
+
+    return (
+        f"{reset_note}"
+        f"Сегодня сумку берёт: {chosen_name} 😶‍🌫️\n\n"
+        f"Выбран из {len(eligible)} 👌🏻{skip_note}"
+    )
 
 # ==============================
 # КОМАНДЫ
@@ -83,7 +113,7 @@ async def cmd_start(message: types.Message):
         "📋 *Как пользоваться:*\n"
         "1. Тренер пишет /training\n"
         "2. Участники нажимают «Буду! 👍🏻» или «Не буду! 👎🏻»\n"
-        "3. Тренер пишет /pick — я выбираю дежурного с учётом истории предыдущих результатов 👌🏻\n\n"
+        "3. Тренер пишет /pick или нажимает кнопку — я выбираю дежурного с учётом истории предыдущих результатов 👌🏻\n\n"
         "⚙️ *Команды:*\n"
         "/training — начать сбор голосов\n"
         "/pick — выбрать дежурного\n"
@@ -154,20 +184,27 @@ async def handle_out(callback: types.CallbackQuery):
     except Exception:
         pass
 
-@dp.message(Command("voters"))
-async def cmd_voters(message: types.Message):
+@dp.callback_query(F.data == "do_pick")
+async def handle_pick_button(callback: types.CallbackQuery):
+    # Проверяем что это админ
+    try:
+        member = await bot.get_chat_member(callback.message.chat.id, callback.from_user.id)
+        if member.status not in ("administrator", "creator"):
+            await callback.answer("Только тренер может выбирать дежурного!", show_alert=True)
+            return
+    except Exception:
+        pass
+
     data = load_data()
     voters = data.get("poll_voters", {})
 
     if not voters:
-        await message.answer("📋 Пока никто не нажал «Буду».")
+        await callback.answer("Никто не нажал «Буду»!", show_alert=True)
         return
 
-    names = "\n".join(f"• {name}" for name in voters.values())
-    await message.answer(
-        f"🙋🏻‍♂️ *Придут ({len(voters)} чел.):*\n\n{names}",
-        parse_mode="Markdown"
-    )
+    result = await do_pick_logic(voters, data)
+    await callback.answer("Выбираю! 🎲")
+    await callback.message.answer(result)
 
 @dp.message(Command("pick"))
 async def cmd_pick(message: types.Message):
@@ -181,32 +218,22 @@ async def cmd_pick(message: types.Message):
         )
         return
 
-    history = data["history"]
-    eligible = {uid: name for uid, name in voters.items() if uid not in history}
+    result = await do_pick_logic(voters, data)
+    await message.answer(result)
 
-    if not eligible:
-        await message.answer(
-            "Все кто придёт — уже дежурили! 😳\n"
-            "Сбрасываю историю и выбираю из всех 🔄"
-        )
-        data["history"] = []
-        save_data(data)
-        eligible = voters
+@dp.message(Command("voters"))
+async def cmd_voters(message: types.Message):
+    data = load_data()
+    voters = data.get("poll_voters", {})
 
-    chosen_id, chosen_name = random.choice(list(eligible.items()))
+    if not voters:
+        await message.answer("📋 Пока никто не нажал «Буду».")
+        return
 
-    data["history"].append(chosen_id)
-    if len(data["history"]) > 100:
-        data["history"] = data["history"][-100:]
-
-    save_data(data)
-
-    skipped = len(voters) - len(eligible)
-    skip_note = f"\n_({skipped} из списка — уже дежурили 🤞🏻)_" if skipped > 0 else ""
-
+    names = "\n".join(f"• {name}" for name in voters.values())
     await message.answer(
-        f"Сегодня сумку берёт: {chosen_name} 😶‍🌫️\n\n"
-        f"Выбран из {len(eligible)} 👌🏻{skip_note}"
+        f"🙋🏻‍♂️ *Придут ({len(voters)} чел.):*\n\n{names}",
+        parse_mode="Markdown"
     )
 
 @dp.message(Command("history"))
