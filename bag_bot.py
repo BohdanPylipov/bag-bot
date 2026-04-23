@@ -47,13 +47,13 @@ def build_message_text(data: dict) -> str:
         names_in = "\n".join(f"• {name}" for name in voters_in.values())
         text += f"🙋🏻‍♂️ *Придут ({len(voters_in)}):*\n{names_in}\n\n"
     else:
-        text += "🙋🏻‍♂️ *Придут (0):*\n_(Пока пусто 👎🏻)_\n\n"
+        text += "🙋🏻‍♂️ *Придут (0):*\n(Пока пусто 👎🏻)\n\n"
 
     if voters_out:
         names_out = "\n".join(f"• {name}" for name in voters_out.values())
         text += f"🙅🏻‍♂️ *Не придут ({len(voters_out)}):*\n{names_out}"
     else:
-        text += "🙅🏻‍♂️ *Не придут (0):*\n_(Пока пусто 👍🏻)_"
+        text += "🙅🏻‍♂️ *Не придут (0):*\n(Пока пусто 👍🏻)"
 
     return text
 
