@@ -5,13 +5,15 @@ import os
 from collections import Counter
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ==============================
 # НАСТРОЙКИ
 # ==============================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
 DATA_FILE = "bag_data.json"
+
+# Варианты ответа в опросе, которые считаются "Буду"
+YES_KEYWORDS = ["буду"]
 
 # ==============================
 # ХРАНЕНИЕ ДАННЫХ
@@ -24,6 +26,8 @@ def load_data() -> dict:
     return {
         "history": [],
         "known_users": {},
+        "last_poll_id": None,
+        "poll_yes_option": None,
         "poll_voters": {},
     }
 
@@ -38,94 +42,78 @@ def save_data(data: dict):
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-def get_vote_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✋ Буду!", callback_data="im_in"),
-            InlineKeyboardButton(text="❌ Не буду", callback_data="im_out")
-        ]
-    ])
 
-# ==============================
-# КОМАНДЫ
-# ==============================
+def is_yes_option(text: str) -> bool:
+    return text.strip().lower() == "буду"
+
+
+@dp.poll_answer()
+async def handle_poll_answer(poll_answer: types.PollAnswer):
+    data = load_data()
+
+    if poll_answer.poll_id != data.get("last_poll_id"):
+        return
+
+    user = poll_answer.user
+    user_id = str(user.id)
+    username = f"@{user.username}" if user.username else user.full_name
+
+    data["known_users"][user_id] = username
+
+    yes_option = data.get("poll_yes_option")
+
+    if yes_option is not None and yes_option in poll_answer.option_ids:
+        data["poll_voters"][user_id] = username
+    else:
+        data["poll_voters"].pop(user_id, None)
+
+    save_data(data)
+
+
+@dp.message(F.poll)
+async def handle_poll_message(message: types.Message):
+    poll = message.poll
+    data = load_data()
+
+    yes_index = None
+    for i, option in enumerate(poll.options):
+        if is_yes_option(option.text):
+            yes_index = i
+            break
+
+    if yes_index is None:
+        return
+
+    data["last_poll_id"] = poll.id
+    data["poll_yes_option"] = yes_index
+    data["poll_voters"] = {}
+    save_data(data)
+
+    option_text = poll.options[yes_index].text
+    await message.reply(
+        f"✅ Отслеживаю опрос!\n"
+        f"Считаю голоса за вариант: *\"{option_text}\"*\n\n"
+        f"Когда все проголосуют — используйте /pick",
+        parse_mode="Markdown"
+    )
+
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
         "👋 Привет! Я выбираю кто несёт сумку на тренировку.\n\n"
         "📋 *Как пользоваться:*\n"
-        "1. Тренер пишет /training\n"
-        "2. Участники нажимают «✋ Буду!» или «❌ Не буду»\n"
+        "1. Тренер создаёт опрос с вариантом *«Буду»*\n"
+        "2. Участники голосуют\n"
         "3. Тренер пишет /pick — я выбираю случайного\n\n"
         "⚙️ *Команды:*\n"
-        "/training — начать сбор голосов\n"
         "/pick — выбрать кто несёт сумку\n"
-        "/voters — кто сейчас нажал «Буду»\n"
+        "/voters — кто сейчас проголосовал «Буду»\n"
         "/history — история дежурств\n"
         "/reset — сбросить историю (только админы)",
         parse_mode="Markdown"
     )
 
-@dp.message(Command("training"))
-async def cmd_training(message: types.Message):
-    data = load_data()
-    data["poll_voters"] = {}
-    save_data(data)
-
-    await message.answer(
-        "🏋️ *Скоро тренировка!*\n\nКто будет — нажмите кнопку 👇",
-        parse_mode="Markdown",
-        reply_markup=get_vote_keyboard()
-    )
-
-@dp.callback_query(F.data == "im_in")
-async def handle_in(callback: types.CallbackQuery):
-    data = load_data()
-    user = callback.from_user
-    user_id = str(user.id)
-    username = f"@{user.username}" if user.username else user.full_name
-
-    data["known_users"][user_id] = username
-    data["poll_voters"][user_id] = username
-    save_data(data)
-
-    count = len(data["poll_voters"])
-    names = "\n".join(f"• {v}" for v in data["poll_voters"].values())
-
-    await callback.answer("Записал! ✅")
-    try:
-        await callback.message.edit_text(
-            f"🏋️ *Скоро тренировка!*\n\nКто будет — нажмите кнопку 👇\n\n"
-            f"*Придут ({count}):*\n{names}",
-            parse_mode="Markdown",
-            reply_markup=get_vote_keyboard()
-        )
-    except Exception:
-        pass
-
-@dp.callback_query(F.data == "im_out")
-async def handle_out(callback: types.CallbackQuery):
-    data = load_data()
-    user = callback.from_user
-    user_id = str(user.id)
-
-    data["poll_voters"].pop(user_id, None)
-    save_data(data)
-
-    count = len(data["poll_voters"])
-    names = "\n".join(f"• {v}" for v in data["poll_voters"].values()) if data["poll_voters"] else "_(пока никто)_"
-
-    await callback.answer("Убрал тебя из списка.")
-    try:
-        await callback.message.edit_text(
-            f"🏋️ *Скоро тренировка!*\n\nКто будет — нажмите кнопку 👇\n\n"
-            f"*Придут ({count}):*\n{names}",
-            parse_mode="Markdown",
-            reply_markup=get_vote_keyboard()
-        )
-    except Exception:
-        pass
 
 @dp.message(Command("voters"))
 async def cmd_voters(message: types.Message):
@@ -133,14 +121,15 @@ async def cmd_voters(message: types.Message):
     voters = data.get("poll_voters", {})
 
     if not voters:
-        await message.answer("📋 Пока никто не нажал «Буду».")
+        await message.answer("📋 Пока никто не проголосовал «Буду» в последнем опросе.")
         return
 
     names = "\n".join(f"• {name}" for name in voters.values())
     await message.answer(
-        f"✋ *Придут ({len(voters)} чел.):*\n\n{names}",
+        f"✋ *Проголосовали «Буду»* ({len(voters)} чел.):\n\n{names}",
         parse_mode="Markdown"
     )
+
 
 @dp.message(Command("pick"))
 async def cmd_pick(message: types.Message):
@@ -149,8 +138,8 @@ async def cmd_pick(message: types.Message):
 
     if not voters:
         await message.answer(
-            "❌ Никто не нажал «Буду»!\n"
-            "Сначала используй /training"
+            "❌ Никто не проголосовал «Буду» в последнем опросе.\n"
+            "Убедитесь что опрос создан и бот его видит."
         )
         return
 
@@ -159,7 +148,7 @@ async def cmd_pick(message: types.Message):
 
     if not eligible:
         await message.answer(
-            "🔄 Все кто придёт — уже брали сумку!\n"
+            "🔄 Все кто пришёл — уже брали сумку!\n"
             "Сбрасываю историю и выбираю из всех."
         )
         data["history"] = []
@@ -183,6 +172,7 @@ async def cmd_pick(message: types.Message):
         parse_mode="Markdown"
     )
 
+
 @dp.message(Command("history"))
 async def cmd_history(message: types.Message):
     data = load_data()
@@ -204,6 +194,7 @@ async def cmd_history(message: types.Message):
         parse_mode="Markdown"
     )
 
+
 @dp.message(Command("reset"))
 async def cmd_reset(message: types.Message):
     try:
@@ -219,9 +210,10 @@ async def cmd_reset(message: types.Message):
     save_data(data)
     await message.answer("✅ История дежурств сброшена!")
 
+
 async def main():
     print("Бот запущен!")
-    await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+    await dp.start_polling(bot, allowed_updates=["message", "poll_answer", "poll"])
 
 if __name__ == "__main__":
     asyncio.run(main())
