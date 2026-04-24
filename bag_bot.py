@@ -47,13 +47,13 @@ def build_message_text(data: dict) -> str:
         names_in = "\n".join(f"• {name}" for name in voters_in.values())
         text += f"🙋🏻‍♂️ *Придут ({len(voters_in)}):*\n{names_in}\n\n"
     else:
-        text += "🙋🏻‍♂️ *Придут (0):*\n(Пока пусто 👎🏻)\n\n"
+        text += "🙋🏻‍♂️ *Придут (0):*\n_(Пока пусто 👎🏻)_\n\n"
 
     if voters_out:
         names_out = "\n".join(f"• {name}" for name in voters_out.values())
         text += f"🙅🏻‍♂️ *Не придут ({len(voters_out)}):*\n{names_out}"
     else:
-        text += "🙅🏻‍♂️ *Не придут (0):*\n(Пока пусто 👍🏻)"
+        text += "🙅🏻‍♂️ *Не придут (0):*\n_(Пока пусто 👍🏻)_"
 
     return text
 
@@ -111,14 +111,14 @@ async def cmd_start(message: types.Message):
     await message.answer(
         "Привет 👋🏻 Я выбираю дежурного по стирке манишек 🧺\n\n"
         "📋 *Как пользоваться:*\n"
-        "1. Тренер пишет /training\n"
+        "1. Тренер пишет /training 🏃🏻‍♂️\n"
         "2. Участники нажимают «Буду! 👍🏻» или «Не буду! 👎🏻»\n"
         "3. Тренер пишет /pick или нажимает кнопку — я выбираю дежурного с учётом истории предыдущих результатов 👌🏻\n\n"
         "⚙️ *Команды:*\n"
         "/training — начать сбор голосов\n"
         "/pick — выбрать дежурного\n"
         "/voters — кто сейчас нажал «Буду»\n"
-        "/history — история дежурств ✍🏻\n"
+        "/history — история дежурств\n"
         "/reset — сбросить историю (только админы)",
         parse_mode="Markdown"
     )
@@ -232,7 +232,7 @@ async def cmd_voters(message: types.Message):
 
     names = "\n".join(f"• {name}" for name in voters.values())
     await message.answer(
-        f"🙋🏻‍♂️ *Придут ({len(voters)} чел.):*\n\n{names}",
+        f"🙋🏻‍♂️ *Придут ({len(voters)}):*\n\n{names}",
         parse_mode="Markdown"
     )
 
