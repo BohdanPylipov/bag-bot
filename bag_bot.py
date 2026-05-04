@@ -94,7 +94,7 @@ async def do_pick_logic(voters: dict, data: dict) -> str:
     save_data(data)
 
     skipped = len(voters) - len(eligible)
-    skip_note = f"\n_({skipped} из списка — уже дежурили 🤞🏻)_" if skipped > 0 else ""
+    skip_note = f"\n({skipped} из списка — уже дежурили 🤞🏻)" if skipped > 0 else ""
 
     return (
         f"{reset_note}"
